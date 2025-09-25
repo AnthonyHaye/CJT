@@ -1,0 +1,59 @@
+{
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"$id": "https://example.com/smc.schema.json",
+"type": "object",
+"required": ["version","timeframeAlignment","structure","liquidity","session","risk","qualityScore","rationale","improvements"],
+"properties": {
+"version": {"type": "string"},
+"timeframeAlignment": {
+"type": "object",
+"required": ["htf","mtf","ltf"],
+"properties": {
+"htf": {"enum": ["Bullish","Bearish","Sideways"]},
+"mtf": {"enum": ["Bullish","Bearish","Sideways"]},
+"ltf": {"enum": ["Bullish","Bearish","Range"]}
+}
+},
+"structure": {
+"type": "object",
+"required": ["bias","chochOrMSS","premiumDiscount"],
+"properties": {
+"bias": {"enum": ["Bullish","Bearish"]},
+"chochOrMSS": {"enum": ["CHOCH","MSS","None"]},
+"premiumDiscount": {"enum": ["Premium","Discount","Equilibrium"]}
+}
+},
+"liquidity": {
+"type": "object",
+"required": ["taken","resting"],
+"properties": {
+"taken": {"type": "array", "items": {"enum": ["EqualHighs","EqualLows","RelativeEQH","RelativeEQL","BuySide","SellSide"]}},
+"resting": {"type": "array", "items": {"enum": ["Above","Below","InternalRange","ExternalRange"]}},
+"sweep": {"enum": ["BuySide","SellSide","None"], "default": "None"}
+}
+},
+"orderBlock": {"type": "object", "nullable": true},
+"fvg": {"type": "object", "nullable": true},
+"session": {
+"type": "object",
+"required": ["name"],
+"properties": {
+"name": {"enum": ["Asia","London","NewYork"]},
+"killzone": {"enum": ["LondonAM","NYAM","NYPM","None"], "default": "None"}
+}
+},
+"entryModel": {"type": "string"},
+"risk": {
+"type": "object",
+"properties": {
+"riskPerTradePct": {"type": "number", "minimum": 0, "maximum": 2},
+"stopType": {"enum": ["Structure","OB","FVG","Liquidity","Other"]},
+"partials": {"type": "array", "items": {"type": "object", "required": ["atRR","sizePct"], "properties": {"atRR": {"type": "number"}, "sizePct": {"type": "number", "minimum": 1, "maximum": 100}}}}
+}
+},
+"newsFilter": {"type": "object"},
+"qualityScore": {"type": "integer", "minimum": 0, "maximum": 100},
+"rationale": {"type": "string"},
+"improvements": {"type": "array", "items": {"type": "string"}}
+}
+}

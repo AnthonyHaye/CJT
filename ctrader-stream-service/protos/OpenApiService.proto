@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package openapi;
+
+import "OpenApiCommonMessages.proto";
+
+// Service du proxy Open API de cTrader : stream bidirectionnel de ProtoMessage
+service OpenApiService {
+  rpc Process (stream ProtoMessage) returns (stream ProtoMessage);
+}

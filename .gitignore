@@ -1,0 +1,53 @@
+# ======================
+#   ENVIRONNEMENT
+# ======================
+# Ne jamais exposer les fichiers .env
+*.env
+.env.local
+.env.*.local
+
+# ======================
+#   NODE / REACT
+# ======================
+node_modules/
+**/node_modules/
+dist/
+build/
+.cache/
+.next/
+out/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ======================
+#   SYMFONY / PHP
+# ======================
+# Cache et logs Symfony
+/var/cache/
+/var/log/
+/var/sessions/
+
+# Vendor (géré par Composer)
+/vendor/
+
+# Fichiers spécifiques Symfony
+/public/bundles/
+/.env.test.local
+
+# ======================
+#   OUTILS / IDE
+# ======================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.iml
+
+# ======================
+#   OS
+# ======================
+.DS_Store
+Thumbs.db

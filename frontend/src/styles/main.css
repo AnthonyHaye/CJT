@@ -1,0 +1,75 @@
+.container {
+  max-width: 1100px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.topbar {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid #ddd;
+  position: sticky;
+  top: 0;
+  background: #fff;
+}
+
+.topbar button {
+  border: 1px solid #ddd;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.dropzone {
+  border: 2px dashed #bbb;
+  border-radius: 0.75rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.dropzone.over {
+  background: #f7faff;
+  border-color: #7aa7ff;
+}
+
+.pick-btn {
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ccc;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.preview {
+  margin-top: 1rem;
+}
+
+.preview table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.preview th, .preview td {
+  border: 1px solid #eee;
+  padding: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.ok {
+  color: #1b7e3b;
+}
+
+.warn {
+  color: #8a5800;
+}
+
+.hint {
+  color: #666;
+}
+
+.errors {
+  margin-top: 1rem;
+  color: #a40000;
+}/*# sourceMappingURL=main.css.map */
