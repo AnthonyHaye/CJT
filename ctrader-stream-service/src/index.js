@@ -1,11 +1,13 @@
 const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
+const protobuf = require('protobufjs');
 const path = require('path');
 const { getAccessToken } = require('./auth');
 const { mapCTraderDealToRawTrade } = require('./mapper');
 const { pushTrades } = require('./push');
 
-const PROTOS = [
+const PROTO_DIR = path.join(__dirname, '..', 'protos');
+const FILES = [
   'OpenApiCommonMessages.proto',
   'OpenApiCommonModelMessages.proto',
   'OpenApiMessages.proto',
@@ -13,121 +15,140 @@ const PROTOS = [
   'OpenApiService.proto',
 ];
 
-function loadProto() {
-  const def = protoLoader.loadSync(
-    PROTOS.map(p => path.join(__dirname, '..', 'protos', p)),
-    { keepCase: true, longs: String, enums: String, defaults: true, oneofs: true }
-  );
+function loadGrpcService() {
+  const def = protoLoader.loadSync(FILES.map(f => path.join(PROTO_DIR, f)), {
+    keepCase: true, longs: String, enums: String, defaults: true, oneofs: true
+  });
   return grpc.loadPackageDefinition(def);
+}
+
+function loadPbRoot() {
+  return protobuf.loadSync(FILES.map(f => path.join(PROTO_DIR, f)));
+}
+
+// Cherche un type/enum/service par nom exact à partir de la racine (pas de package)
+function findType(root, name) {
+  const stack = [root];
+  while (stack.length) {
+    const ns = stack.pop();
+    if (ns.nested) {
+      for (const [k, v] of Object.entries(ns.nested)) {
+        if (k === name) return v; // v: Type/Enum/Service
+        stack.push(v);
+      }
+    }
+  }
+  throw new Error(`Type not found: ${name}`);
+}
+function findService(grpcPkg, name) {
+  const walk = (o) => {
+    for (const [k, v] of Object.entries(o)) {
+      if (k === name && typeof v === 'function') return v;
+      if (v && typeof v === 'object') {
+        const w = walk(v); if (w) return w;
+      }
+    }
+    return null;
+  };
+  const svc = walk(grpcPkg);
+  if (!svc) throw new Error(`Service not found: ${name}`);
+  return svc;
 }
 
 async function main() {
   const accessToken = await getAccessToken();
-  const pkg = loadProto();
 
-  // Espace de noms probable = "openapi"
-  const service = pkg.openapi.OpenApiService;
-  const client = new service('openapi.ctrader.com:5035', grpc.credentials.createSsl());
+  const grpcPkg = loadGrpcService();
+  const root = loadPbRoot();
 
+  // === Types/Enums (à la racine) ===
+  const ProtoMessage     = findType(root, 'ProtoMessage');           // message envelope
+  const ProtoOAPayloadType = findType(root, 'ProtoOAPayloadType');   // enum
+  const AppAuthReq       = findType(root, 'ProtoOAApplicationAuthReq');
+  const AccountAuthReq   = findType(root, 'ProtoOAAccountAuthReq');
+  const DealListReq      = findType(root, 'ProtoOADealListReq');
+  const DealListRes      = findType(root, 'ProtoOADealListRes');
+  const ExecutionEvent   = findType(root, 'ProtoOAExecutionEvent');
+  const ErrorRes         = findType(root, 'ProtoErrorRes');
+
+  const E = ProtoOAPayloadType.values;
+
+  // === Service gRPC (sans package) ===
+  const OpenApiService = findService(grpcPkg, 'OpenApiService');
+  const client = new OpenApiService('openapi.ctrader.com:5035', grpc.credentials.createSsl());
   const stream = client.Process();
 
-  // Utilitaires pour sérialiser/désérialiser
-  const root = pkg; // via proto-loader, on accède aux types par pkg
-  const OA = pkg;   // pour raccourci (les enums/messages sont sur pkg)
-
-  const types = {
-    ProtoMessage: pkg.openapi.ProtoMessage || pkg.ProtoMessage,
-    // messages OA (trouvés dans tes .proto)
-    AppAuthReq: pkg.ProtoOAApplicationAuthReq || pkg.openapi.ProtoOAApplicationAuthReq,
-    AccountAuthReq: pkg.ProtoOAAccountAuthReq || pkg.openapi.ProtoOAAccountAuthReq,
-    DealListReq: pkg.ProtoOADealListReq || pkg.openapi.ProtoOADealListReq,
-  };
-
-  const enums = {
-    OAPayloadType: pkg.ProtoOAPayloadType || pkg.openapi.ProtoOAPayloadType,
-  };
-
-  function send(payloadTypeEnum, msgObj, MsgCtor) {
-    // encode message vers bytes
-    const message = MsgCtor.fromObject ? MsgCtor.fromObject(msgObj) : msgObj;
-    const payload = MsgCtor.encode ? MsgCtor.encode(message).finish() : MsgCtor.encode(message).finish();
-    stream.write({
-      payloadType: payloadTypeEnum,
-      payload,
+  function send(payloadType, obj, Type) {
+    const msg = Type.create(obj);
+    const payload = Type.encode(msg).finish();
+    const envelope = ProtoMessage.create({
+      payloadType,
       clientMsgId: String(Date.now()),
+      payload
+    });
+    // grpc-js accepte un plain object {payloadType, clientMsgId, payload}
+    stream.write({
+      payloadType: envelope.payloadType,
+      clientMsgId: envelope.clientMsgId,
+      payload: envelope.payload
     });
   }
 
   stream.on('data', (res) => {
     try {
-      // res.payloadType (uint) → switch sur enums
       const t = Number(res.payloadType);
-
-      // On doit décoder selon le type attendu (exemples)
-      const PT = enums.OAPayloadType;
       const buf = res.payload;
 
-      if (t === PT.PROTO_OA_APPLICATION_AUTH_RES) {
+      if (t === E.PROTO_OA_APPLICATION_AUTH_RES) {
         console.log('Application AUTH OK');
-        // Étape suivante : Auth compte
-        const msg = { ctidTraderAccountId: Number(process.env.CTRADER_ACCOUNT_ID), accessToken };
-        send(PT.PROTO_OA_ACCOUNT_AUTH_REQ, msg, pkg.ProtoOAAccountAuthReq);
-      }
-      else if (t === PT.PROTO_OA_ACCOUNT_AUTH_RES) {
-        console.log('Account AUTH OK');
+        send(E.PROTO_OA_ACCOUNT_AUTH_REQ, {
+          ctidTraderAccountId: Number(process.env.CTRADER_ACCOUNT_ID),
+          accessToken
+        }, AccountAuthReq);
 
-        // 1) Récupère l’historique des deals (ex: 30 jours)
+      } else if (t === E.PROTO_OA_ACCOUNT_AUTH_RES) {
+        console.log('Account AUTH OK');
         const now = Date.now();
         const from = now - 30 * 24 * 3600 * 1000;
-
-        const dealListReq = {
+        send(E.PROTO_OA_DEAL_LIST_REQ, {
           ctidTraderAccountId: Number(process.env.CTRADER_ACCOUNT_ID),
           fromTimestamp: from,
           toTimestamp: now,
-          maxRows: 500,
-        };
-        send(PT.PROTO_OA_DEAL_LIST_REQ, dealListReq, pkg.ProtoOADealListReq);
+          maxRows: 500
+        }, DealListReq);
 
-        // 2) Les events live arrivent sous PROTO_OA_EXECUTION_EVENT
-      }
-      else if (t === PT.PROTO_OA_DEAL_LIST_RES) {
-        const decoded = pkg.ProtoOADealListRes.decode(buf);
+      } else if (t === E.PROTO_OA_DEAL_LIST_RES) {
+        const decoded = DealListRes.decode(buf);
         const deals = decoded.deal || [];
         console.log(`DealListRes: ${deals.length} deals (hasMore=${decoded.hasMore})`);
-
-        const payload = deals.map(d => mapCTraderDealToRawTrade(d));
-        if (payload.length) {
-          pushTrades(payload).catch(e => console.error('pushTrades error:', e?.message));
+        if (deals.length) {
+          pushTrades(deals.map(mapCTraderDealToRawTrade)).catch(e => console.error('pushTrades:', e?.message));
         }
 
-        // Si hasMore, relance une requête avec un range ajusté (optionnel)
-      }
-      else if (t === PT.PROTO_OA_EXECUTION_EVENT) {
-        const ev = pkg.ProtoOAExecutionEvent.decode(buf);
+      } else if (t === E.PROTO_OA_EXECUTION_EVENT) {
+        const ev = ExecutionEvent.decode(buf);
         if (ev.deal) {
-          const payload = [mapCTraderDealToRawTrade(ev.deal)];
-          pushTrades(payload).catch(e => console.error('pushTrades error:', e?.message));
+          pushTrades([mapCTraderDealToRawTrade(ev.deal)]).catch(e => console.error('pushTrades:', e?.message));
           console.log('New execution → pushed 1 trade');
         }
-      }
-      else if (t === PT.PROTO_OA_ERROR_RES) {
-        const err = pkg.ProtoErrorRes.decode(buf);
+
+      } else if (t === E.PROTO_OA_ERROR_RES) {
+        const err = ErrorRes.decode(buf);
         console.error('OA ERROR:', err.errorCode, err.description || '');
       }
-      // ajoute d’autres handlers si besoin (TRADER_RES, RECONCILE_RES, etc.)
     } catch (e) {
-      console.error('stream data decode error:', e);
+      console.error('decode error:', e);
     }
   });
 
   stream.on('error', (e) => console.error('gRPC stream error', e));
   stream.on('end',   () => console.log('gRPC stream ended'));
 
-  // Démarre la séquence : ApplicationAuth → (réponse) → AccountAuth
-  send(enums.OAPayloadType.PROTO_OA_APPLICATION_AUTH_REQ, {
+  // Kick-off
+  send(E.PROTO_OA_APPLICATION_AUTH_REQ, {
     clientId: process.env.CTRADER_APP_ID,
     clientSecret: process.env.CTRADER_APP_SECRET
-  }, pkg.ProtoOAApplicationAuthReq);
+  }, AppAuthReq);
 }
 
 main().catch(console.error);

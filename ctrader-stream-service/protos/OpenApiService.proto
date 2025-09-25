@@ -1,10 +1,8 @@
-syntax = "proto3";
-
-package openapi;
+syntax = "proto2";
 
 import "OpenApiCommonMessages.proto";
 
-// Service du proxy Open API de cTrader : stream bidirectionnel de ProtoMessage
+/** Proxy bi-directionnel d'enveloppes ProtoMessage */
 service OpenApiService {
   rpc Process (stream ProtoMessage) returns (stream ProtoMessage);
 }
